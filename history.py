@@ -135,8 +135,12 @@ class HistoryOpen(sublime_plugin.TextCommand):
             if index == -1:
                 return
 
-            # Open
-            self.view.window().open_file(os.path.join(history_dir, history_files[index]))
+            # Sublime Text 3 has a bug wherein calling open_file from within a panel
+            # callback causes the new view to not have focus. Make a deferred call via
+            # set_timeout to workaround this issue.
+            sublime.set_timeout(lambda: self.view.window().open_file(
+                                            os.path.join(history_dir, history_files[index])),
+                                0)
 
         self.view.window().show_quick_panel(history_files, on_done)
 
