@@ -49,6 +49,10 @@ def get_file_dir(file_path, history_path=None):
     return os.path.join(history_path, file_dir)
 
 
+def get_pretty_printed_file_times(file_list):
+    return [dt.fromtimestamp(os.path.getmtime(f)).strftime('%m/%d/%Y, %I:%M:%S %p') for f in file_list]
+
+
 def get_diff(from_file, to_file):
     # From
     if PY2:
@@ -167,7 +171,7 @@ class HistoryOpen(sublime_plugin.TextCommand):
             sublime.status_message(NO_HISTORY_MSG)
             return
 
-        panel_list = [os.path.split(p)[1] for p in history_files]
+        panel_list = get_pretty_printed_file_times(history_files)
 
         diff_view = get_new_diff_view()
 
@@ -210,7 +214,7 @@ class HistoryCompare(sublime_plugin.TextCommand):
         # Skip the first one as its always identical
         history_files = history_files[1:]
 
-        panel_list = [os.path.split(p)[1] for p in history_files]
+        panel_list = get_pretty_printed_file_times(history_files)
 
         if not history_files:
             sublime.status_message(NO_HISTORY_MSG)
@@ -248,7 +252,7 @@ class HistoryIncrementalDiff(sublime_plugin.TextCommand):
             sublime.status_message(NO_INCREMENTAL_DIFF)
             return
 
-        panel_list = [os.path.split(p)[1] for p in history_files]
+        panel_list = get_pretty_printed_file_times(history_files)
 
         def on_done(index):
             # Escape
