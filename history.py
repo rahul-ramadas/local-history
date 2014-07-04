@@ -49,6 +49,41 @@ def get_file_dir(file_path, history_path=None):
     return os.path.join(history_path, file_dir)
 
 
+def get_diff(from_file, to_file):
+    # From
+    if PY2:
+        from_file = from_file.encode('utf-8')
+        with open(from_file, 'r') as f:
+            from_content = f.readlines()
+    else:
+        with open(from_file, 'r', encoding='utf-8') as f:
+            from_content = f.readlines()
+
+    # To
+    if PY2:
+        to_file = to_file.encode('utf-8')
+        with open(to_file, 'r') as f:
+            to_content = f.readlines()
+    else:
+        with open(to_file, 'r', encoding='utf-8') as f:
+            to_content = f.readlines()
+
+    # Compare and show diff
+    diff = difflib.unified_diff(from_content, to_content, from_file, to_file)
+    diff = ''.join(diff)
+    if PY2:
+        diff = diff.decode('utf-8')
+    return diff
+
+
+def get_new_diff_view():
+    view = sublime.active_window().new_file()
+    view.set_scratch(True)
+    view.set_syntax_file('Packages/Diff/Diff.tmLanguage')
+    view.set_name('Diff View')
+    return view
+
+
 class HistorySave(sublime_plugin.EventListener):
 
     def on_close(self, view):
@@ -135,7 +170,11 @@ class HistoryOpen(sublime_plugin.TextCommand):
             sublime.status_message(NO_HISTORY_MSG)
             return
 
+        diff_view = get_new_diff_view()
+
         def on_done(index):
+            self.view.window().run_command('close_file')
+
             # Escape
             if index == -1:
                 return
@@ -147,7 +186,18 @@ class HistoryOpen(sublime_plugin.TextCommand):
                 os.path.join(history_dir, history_files[index])),
                 0)
 
-        self.view.window().show_quick_panel(history_files, on_done)
+        def on_highlight(index):
+            if self.view.is_dirty():
+                self.view.run_command('save')
+
+            from_file = os.path.join(history_dir, history_files[index])
+            to_file = self.view.file_name()
+            diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
+
+        if PY2:
+            self.view.window().show_quick_panel(history_files, on_done)
+        else:
+            self.view.window().show_quick_panel(history_files, on_done, on_highlight=on_highlight)
 
 
 class HistoryCompare(sublime_plugin.TextCommand):
@@ -180,7 +230,8 @@ class HistoryCompare(sublime_plugin.TextCommand):
             # Show diff
             from_file = os.path.join(history_dir, history_files[index])
             to_file = self.view.file_name()
-            self.view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
+            diff_view = get_new_diff_view()
+            diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
         self.view.window().show_quick_panel(history_files, on_done)
 
@@ -213,7 +264,8 @@ class HistoryIncrementalDiff(sublime_plugin.TextCommand):
             # Show diff
             from_file = os.path.join(history_dir, history_files[index + 1])
             to_file = os.path.join(history_dir, history_files[index])
-            self.view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
+            diff_view = get_new_diff_view()
+            diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
         self.view.window().show_quick_panel(history_files, on_done)
 
@@ -223,33 +275,10 @@ class ShowDiff(sublime_plugin.TextCommand):
     def run(self, edit, **kwargs):
         from_file = kwargs['from_file']
         to_file = kwargs['to_file']
-        # From
-        if PY2:
-            from_file = from_file.encode('utf-8')
-            with open(from_file, 'r') as f:
-                from_content = f.readlines()
-        else:
-            with open(from_file, 'r', encoding='utf-8') as f:
-                from_content = f.readlines()
-
-        # To
-        if PY2:
-            to_file = to_file.encode('utf-8')
-            with open(to_file, 'r') as f:
-                to_content = f.readlines()
-        else:
-            with open(to_file, 'r', encoding='utf-8') as f:
-                to_content = f.readlines()
-
-        # Compare and show diff
-        diff = difflib.unified_diff(from_content, to_content, from_file, to_file)
-        diff = ''.join(diff)
-        if PY2:
-            diff = diff.decode('utf-8')
-        panel = sublime.active_window().new_file()
-        panel.set_scratch(True)
-        panel.set_syntax_file('Packages/Diff/Diff.tmLanguage')
-        panel.insert(edit, 0, diff)
+        diff = get_diff(from_file, to_file)
+        view = self.view
+        view.erase(edit, sublime.Region(0, view.size()))
+        view.insert(edit, 0, diff)
 
 
 class HistoryDeleteAll(sublime_plugin.TextCommand):
