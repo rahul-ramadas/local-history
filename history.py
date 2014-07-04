@@ -278,7 +278,10 @@ class ShowDiff(sublime_plugin.TextCommand):
         diff = get_diff(from_file, to_file)
         view = self.view
         view.erase(edit, sublime.Region(0, view.size()))
-        view.insert(edit, 0, diff)
+        if diff:
+            view.insert(edit, 0, diff)
+        else:
+            view.insert(edit, 0, 'No differences.')
 
 
 class HistoryDeleteAll(sublime_plugin.TextCommand):
