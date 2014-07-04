@@ -22,14 +22,18 @@ HISTORY_DELETED_MSG = 'All local history deleted'
 PY2 = sys.version_info < (3, 0)
 S = sublime.load_settings('LocalHistory.sublime-settings')
 
+
 # For ST3
 def plugin_loaded():
     global S
     S = sublime.load_settings('LocalHistory.sublime-settings')
 
+
 def get_history_path():
-    default_history_path = os.path.join(os.path.abspath(os.path.expanduser('~')), '.sublime', 'history')
+    default_history_path = os.path.join(
+        os.path.abspath(os.path.expanduser('~')), '.sublime', 'history')
     return S.get("history_path", default_history_path)
+
 
 def get_file_dir(file_path, history_path=None):
     if history_path is None:
@@ -56,9 +60,9 @@ class HistorySave(sublime_plugin.EventListener):
         if not S.get('history_on_close'):
             S.get('file_size_limit')
             t = Thread(target=self.process_history, args=(view.file_name(),
-                get_history_path(),
-                S.get('file_size_limit'),
-                S.get('history_retention')))
+                                                          get_history_path(),
+                                                          S.get('file_size_limit'),
+                                                          S.get('history_retention')))
             t.start()
 
     def process_history(self, file_path, history_path, file_size_limit, history_retention):
@@ -66,8 +70,8 @@ class HistorySave(sublime_plugin.EventListener):
             file_path = file_path.encode('utf-8')
         # Return if file exceeds the size limit
         if os.path.getsize(file_path) > file_size_limit:
-            print ('WARNING: Local History did not save a copy of this file \
-                because it has exceeded {0}KB limit.'.format(file_size_limit / 1024))
+            print('WARNING: Local History did not save a copy of this file \
+                   because it has exceeded {0}KB limit.'.format(file_size_limit / 1024))
             return
 
         # Get history directory
@@ -89,13 +93,14 @@ class HistorySave(sublime_plugin.EventListener):
 
         # Store history
         shutil.copyfile(file_path, os.path.join(history_dir,
-            '{0}.{1}'.format(dt.now().strftime('%Y-%m-%d_%H.%M.%S'),
-                file_name)))
+                                                '{0}.{1}'.format(dt.now().strftime('%Y-%m-%d_%H.%M.%S'),
+                                                                 file_name)))
 
         # Remove old files
         now = time.time()
         for file in history_files:
-            if os.path.getmtime(file) < now - history_retention * 86400: # convert to seconds
+            # convert to seconds
+            if os.path.getmtime(file) < now - history_retention * 86400:
                 os.remove(file)
 
 
@@ -139,8 +144,8 @@ class HistoryOpen(sublime_plugin.TextCommand):
             # callback causes the new view to not have focus. Make a deferred call via
             # set_timeout to workaround this issue.
             sublime.set_timeout(lambda: self.view.window().open_file(
-                                            os.path.join(history_dir, history_files[index])),
-                                0)
+                os.path.join(history_dir, history_files[index])),
+                0)
 
         self.view.window().show_quick_panel(history_files, on_done)
 
