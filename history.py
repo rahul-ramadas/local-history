@@ -117,19 +117,17 @@ class HistorySave(sublime_plugin.EventListener):
             os.makedirs(history_dir)
 
         # Get history files
-        os.chdir(history_dir)
-        history_files = glob.glob('*' + file_name)
+        history_files = glob.glob(os.path.join(history_dir, '*' + file_name))
         history_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
 
         # Skip if no changes
         if history_files:
-            if filecmp.cmp(file_path, os.path.join(history_dir, history_files[0])):
+            if filecmp.cmp(file_path, history_files[0]):
                 return
 
         # Store history
-        shutil.copyfile(file_path, os.path.join(history_dir,
-                                                '{0}.{1}'.format(dt.now().strftime('%Y-%m-%d_%H.%M.%S'),
-                                                                 file_name)))
+        new_file_name = '{0}.{1}'.format(dt.now().strftime('%Y-%m-%d_%H.%M.%S'), file_name)
+        shutil.copyfile(file_path, os.path.join(history_dir, new_file_name))
 
         # Remove old files
         now = time.time()
@@ -159,16 +157,17 @@ class HistoryOpen(sublime_plugin.TextCommand):
         history_dir = get_file_dir(self.view.file_name())
 
         # Get history files
-        try:
-            os.chdir(history_dir)
-        except OSError:
+        if not os.path.isdir(history_dir):
             sublime.status_message(NO_HISTORY_MSG)
             return
-        history_files = glob.glob('*' + file_name)
+
+        history_files = glob.glob(os.path.join(history_dir, '*' + file_name))
         history_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
         if not history_files:
             sublime.status_message(NO_HISTORY_MSG)
             return
+
+        panel_list = [os.path.split(p)[1] for p in history_files]
 
         diff_view = get_new_diff_view()
 
@@ -182,22 +181,20 @@ class HistoryOpen(sublime_plugin.TextCommand):
             # Sublime Text 3 has a bug wherein calling open_file from within a panel
             # callback causes the new view to not have focus. Make a deferred call via
             # set_timeout to workaround this issue.
-            sublime.set_timeout(lambda: self.view.window().open_file(
-                os.path.join(history_dir, history_files[index])),
-                0)
+            sublime.set_timeout(lambda: self.view.window().open_file(history_files[index]), 0)
 
         def on_highlight(index):
             if self.view.is_dirty():
                 self.view.run_command('save')
 
-            from_file = os.path.join(history_dir, history_files[index])
+            from_file = history_files[index]
             to_file = self.view.file_name()
             diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
         if PY2:
-            self.view.window().show_quick_panel(history_files, on_done)
+            self.view.window().show_quick_panel(panel_list, on_done)
         else:
-            self.view.window().show_quick_panel(history_files, on_done, on_highlight=on_highlight)
+            self.view.window().show_quick_panel(panel_list, on_done, on_highlight=on_highlight)
 
 
 class HistoryCompare(sublime_plugin.TextCommand):
@@ -208,11 +205,12 @@ class HistoryCompare(sublime_plugin.TextCommand):
         history_dir = get_file_dir(self.view.file_name())
 
         # Get history files
-        os.chdir(history_dir)
-        history_files = glob.glob('*' + file_name)
+        history_files = glob.glob(os.path.join(history_dir, '*' + file_name))
         history_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
         # Skip the first one as its always identical
         history_files = history_files[1:]
+
+        panel_list = [os.path.split(p)[1] for p in history_files]
 
         if not history_files:
             sublime.status_message(NO_HISTORY_MSG)
@@ -228,12 +226,12 @@ class HistoryCompare(sublime_plugin.TextCommand):
                 self.view.run_command('save')
 
             # Show diff
-            from_file = os.path.join(history_dir, history_files[index])
+            from_file = history_files[index]
             to_file = self.view.file_name()
             diff_view = get_new_diff_view()
             diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
-        self.view.window().show_quick_panel(history_files, on_done)
+        self.view.window().show_quick_panel(panel_list, on_done)
 
 
 class HistoryIncrementalDiff(sublime_plugin.TextCommand):
@@ -244,12 +242,13 @@ class HistoryIncrementalDiff(sublime_plugin.TextCommand):
         history_dir = get_file_dir(self.view.file_name())
 
         # Get history files
-        os.chdir(history_dir)
-        history_files = glob.glob('*' + file_name)
+        history_files = glob.glob(os.path.join(history_dir, '*' + file_name))
         history_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
         if len(history_files) < 2:
             sublime.status_message(NO_INCREMENTAL_DIFF)
             return
+
+        panel_list = [os.path.split(p)[1] for p in history_files]
 
         def on_done(index):
             # Escape
@@ -262,12 +261,12 @@ class HistoryIncrementalDiff(sublime_plugin.TextCommand):
                 return
 
             # Show diff
-            from_file = os.path.join(history_dir, history_files[index + 1])
-            to_file = os.path.join(history_dir, history_files[index])
+            from_file = history_files[index + 1]
+            to_file = history_files[index]
             diff_view = get_new_diff_view()
             diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
-        self.view.window().show_quick_panel(history_files, on_done)
+        self.view.window().show_quick_panel(panel_list, on_done)
 
 
 class ShowDiff(sublime_plugin.TextCommand):
