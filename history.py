@@ -95,14 +95,19 @@ class HistorySave(sublime_plugin.EventListener):
             t = Thread(target=self.process_history, args=(view.file_name(),))
             t.start()
 
+    def on_pre_save(self, view):
+        if not S.get('history_on_close'):
+            self.process_history(view.file_name(),
+                                 get_history_path(),
+                                 S.get('file_size_limit'),
+                                 S.get('history_retention'))
+
     def on_post_save(self, view):
         if not S.get('history_on_close'):
-            S.get('file_size_limit')
-            t = Thread(target=self.process_history, args=(view.file_name(),
-                                                          get_history_path(),
-                                                          S.get('file_size_limit'),
-                                                          S.get('history_retention')))
-            t.start()
+            self.process_history(view.file_name(),
+                                 get_history_path(),
+                                 S.get('file_size_limit'),
+                                 S.get('history_retention'))
 
     def process_history(self, file_path, history_path, file_size_limit, history_retention):
         if PY2:
@@ -130,8 +135,13 @@ class HistorySave(sublime_plugin.EventListener):
                 return
 
         # Store history
-        new_file_name = '{0}.{1}'.format(dt.now().strftime('%Y-%m-%d_%H.%M.%S'), file_name)
-        shutil.copyfile(file_path, os.path.join(history_dir, new_file_name))
+        new_file_name = '{0}.{1}'.format(dt.fromtimestamp(os.path.getmtime(file_path)).strftime('%Y-%m-%d_%H.%M.%S'), file_name)
+        new_file_path = os.path.join(history_dir, new_file_name)
+        shutil.copyfile(file_path, new_file_path)
+
+        # Set timestamps on the history file
+        file_stat = os.stat(file_path)
+        os.utime(new_file_path, ns=(file_stat.st_atime_ns, file_stat.st_mtime_ns))
 
         # Remove old files
         now = time.time()
