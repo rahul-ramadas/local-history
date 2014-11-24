@@ -1,4 +1,3 @@
-import sys
 import os
 import glob
 import platform
@@ -7,7 +6,6 @@ from datetime import datetime as dt
 import difflib
 import filecmp
 import shutil
-from threading import Thread
 import subprocess
 import sublime
 import sublime_plugin
@@ -19,11 +17,9 @@ NO_HISTORY_MSG = 'No local history found'
 NO_INCREMENTAL_DIFF = 'No incremental diff found'
 HISTORY_DELETED_MSG = 'All local history deleted'
 
-PY2 = sys.version_info < (3, 0)
-S = sublime.load_settings('LocalHistory.sublime-settings')
+S = None
 
 
-# For ST3
 def plugin_loaded():
     global S
     S = sublime.load_settings('LocalHistory.sublime-settings')
@@ -55,28 +51,16 @@ def get_pretty_printed_file_times(file_list):
 
 def get_diff(from_file, to_file):
     # From
-    if PY2:
-        from_file = from_file.encode('utf-8')
-        with open(from_file, 'r') as f:
-            from_content = f.readlines()
-    else:
-        with open(from_file, 'r', encoding='utf-8') as f:
-            from_content = f.readlines()
+    with open(from_file, 'r', encoding='utf-8') as f:
+        from_content = f.readlines()
 
     # To
-    if PY2:
-        to_file = to_file.encode('utf-8')
-        with open(to_file, 'r') as f:
-            to_content = f.readlines()
-    else:
-        with open(to_file, 'r', encoding='utf-8') as f:
-            to_content = f.readlines()
+    with open(to_file, 'r', encoding='utf-8') as f:
+        to_content = f.readlines()
 
     # Compare and show diff
     diff = difflib.unified_diff(from_content, to_content, from_file, to_file)
     diff = ''.join(diff)
-    if PY2:
-        diff = diff.decode('utf-8')
     return diff
 
 
@@ -90,28 +74,22 @@ def get_new_diff_view():
 
 class HistorySave(sublime_plugin.EventListener):
 
-    def on_close(self, view):
-        if S.get('history_on_close'):
-            t = Thread(target=self.process_history, args=(view.file_name(),))
-            t.start()
-
     def on_pre_save(self, view):
-        if not S.get('history_on_close'):
-            self.process_history(view.file_name(),
-                                 get_history_path(),
-                                 S.get('file_size_limit'),
-                                 S.get('history_retention'))
+        if not os.path.exists(view.file_name()):
+            return
+
+        self.process_history(view.file_name(),
+                             get_history_path(),
+                             S.get('file_size_limit'),
+                             S.get('history_retention'))
 
     def on_post_save(self, view):
-        if not S.get('history_on_close'):
-            self.process_history(view.file_name(),
-                                 get_history_path(),
-                                 S.get('file_size_limit'),
-                                 S.get('history_retention'))
+        self.process_history(view.file_name(),
+                             get_history_path(),
+                             S.get('file_size_limit'),
+                             S.get('history_retention'))
 
     def process_history(self, file_path, history_path, file_size_limit, history_retention):
-        if PY2:
-            file_path = file_path.encode('utf-8')
         # Return if file exceeds the size limit
         if os.path.getsize(file_path) > file_size_limit:
             print('WARNING: Local History did not save a copy of this file \
@@ -205,47 +183,7 @@ class HistoryOpen(sublime_plugin.TextCommand):
             to_file = self.view.file_name()
             diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
-        if PY2:
-            self.view.window().show_quick_panel(panel_list, on_done)
-        else:
-            self.view.window().show_quick_panel(panel_list, on_done, on_highlight=on_highlight)
-
-
-class HistoryCompare(sublime_plugin.TextCommand):
-
-    def run(self, edit):
-        # Get history directory
-        file_name = os.path.basename(self.view.file_name())
-        history_dir = get_file_dir(self.view.file_name())
-
-        # Get history files
-        history_files = glob.glob(os.path.join(history_dir, '*' + file_name))
-        history_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
-        # Skip the first one as its always identical
-        history_files = history_files[1:]
-
-        panel_list = get_pretty_printed_file_times(history_files)
-
-        if not history_files:
-            sublime.status_message(NO_HISTORY_MSG)
-            return
-
-        def on_done(index):
-            # Escape
-            if index == -1:
-                return
-
-            # Trigger save before comparing, if required!
-            if self.view.is_dirty():
-                self.view.run_command('save')
-
-            # Show diff
-            from_file = history_files[index]
-            to_file = self.view.file_name()
-            diff_view = get_new_diff_view()
-            diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
-
-        self.view.window().show_quick_panel(panel_list, on_done)
+        self.view.window().show_quick_panel(panel_list, on_done, on_highlight=on_highlight)
 
 
 class HistoryIncrementalDiff(sublime_plugin.TextCommand):
@@ -264,23 +202,27 @@ class HistoryIncrementalDiff(sublime_plugin.TextCommand):
 
         panel_list = get_pretty_printed_file_times(history_files)
 
+        # Remove the last item in the panel list because there is nothing to compare it to.
+        # Note that history_list is not changed, because we still need the last file in it, so that
+        # the previous entry can be compared with it.
+        panel_list.pop()
+
+        diff_view = get_new_diff_view()
+
         def on_done(index):
             # Escape
             if index == -1:
+                self.view.window().run_command('close_file')
                 return
 
-            # Selected the last file
-            if index == len(history_files) - 1:
-                sublime.status_message(NO_INCREMENTAL_DIFF)
-                return
+            # Diff view is already open. Nothing to do here.
 
-            # Show diff
+        def on_highlight(index):
             from_file = history_files[index + 1]
             to_file = history_files[index]
-            diff_view = get_new_diff_view()
             diff_view.run_command('show_diff', {'from_file': from_file, 'to_file': to_file})
 
-        self.view.window().show_quick_panel(panel_list, on_done)
+        self.view.window().show_quick_panel(panel_list, on_done, on_highlight=on_highlight)
 
 
 class ShowDiff(sublime_plugin.TextCommand):
